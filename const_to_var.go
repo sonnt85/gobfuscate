@@ -1,4 +1,4 @@
-package main
+package gobfuscate
 
 import (
 	"bytes"
@@ -6,13 +6,13 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
+	"os"
 	"sort"
 	"strings"
 )
 
 func stringConstsToVar(path string) error {
-	contents, err := ioutil.ReadFile(path)
+	contents, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ func stringConstsToVar(path string) error {
 	}
 	resBuf.Write(contents[lastIdx:])
 
-	return ioutil.WriteFile(path, resBuf.Bytes(), 0755)
+	return os.WriteFile(path, resBuf.Bytes(), 0755)
 }
 
 type constToVar struct {

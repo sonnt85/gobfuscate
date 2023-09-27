@@ -1,4 +1,4 @@
-package main
+package gobfuscate
 
 import (
 	"fmt"
@@ -15,8 +15,10 @@ import (
 // and all of its dependencies.
 func CopyGopath(packageName, newGopath string, keepTests bool) error {
 	ctx := build.Default
-
+	// fmt.Printf("%+v\n", ctx)
 	rootPkg, err := ctx.Import(packageName, "", 0)
+
+	// rootPkg, err := ctx.Import(packageName, "", 0)
 	if err != nil {
 		return err
 	}

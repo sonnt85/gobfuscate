@@ -1,4 +1,4 @@
-package main
+package gobfuscate
 
 import (
 	"bytes"
@@ -6,7 +6,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -26,7 +25,7 @@ func ObfuscateStrings(gopath string) error {
 			return err
 		}
 
-		contents, err := ioutil.ReadFile(path)
+		contents, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
@@ -45,7 +44,7 @@ func ObfuscateStrings(gopath string) error {
 		if err != nil {
 			return err
 		}
-		return ioutil.WriteFile(path, newCode, 0755)
+		return os.WriteFile(path, newCode, 0755)
 	})
 }
 

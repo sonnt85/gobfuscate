@@ -1,15 +1,18 @@
-package main
+package cmd
 
 import (
 	"crypto/rand"
 	"flag"
 	"fmt"
 	"go/build"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/sonnt85/gobfuscate"
+	"github.com/sonnt85/gosystem"
+	"github.com/spf13/cobra"
 )
 
 // Command line arguments.
@@ -19,36 +22,57 @@ var (
 	outputGopath        bool
 	keepTests           bool
 	winHide             bool
+	ldf                 string
+	go11module          string
 	noStaticLink        bool
 	preservePackageName bool
 	verbose             bool
+	ignoreDelTmp        bool
 )
 
-func main() {
-	flag.StringVar(&customPadding, "padding", "", "use a custom padding for hashing sensitive information (otherwise a random padding will be used)")
-	flag.BoolVar(&outputGopath, "outdir", false, "output a full GOPATH")
-	flag.BoolVar(&keepTests, "keeptests", false, "keep _test.go files")
-	flag.BoolVar(&winHide, "winhide", false, "hide windows GUI")
-	flag.BoolVar(&noStaticLink, "nostatic", false, "do not statically link")
-	flag.BoolVar(&preservePackageName, "noencrypt", false,
+var (
+	BuildCmd = &cobra.Command{
+		Use:     "build pkgName outPath",
+		Aliases: []string{"b"},
+		Short:   "Build go project",
+		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) != 2 {
+				fmt.Fprintln(os.Stderr, "missing 2 parameters pkg_name out_path")
+				flag.PrintDefaults()
+				os.Exit(1)
+			}
+			if len(os.Getenv("GO111MODULE")) == 0 {
+				os.Setenv("GO111MODULE", go11module)
+			}
+
+			pkgName := args[0]
+			outPath := args[1]
+			// os.Setenv("GO111MODULE", "off")
+			if !obfuscate(pkgName, outPath) {
+				os.Exit(1)
+			}
+		},
+	}
+)
+
+func Execute() {
+	Init()
+	BuildCmd.Execute()
+}
+
+func Init() {
+	BuildCmd.Flags().StringVarP(&customPadding, "padding", "p", "", "use a custom padding for hashing sensitive information (otherwise a random padding will be used)")
+	BuildCmd.Flags().BoolVarP(&outputGopath, "nobuild", "n", false, "only copy source code, GOPATH to new dir then exit, need manual build")
+	BuildCmd.Flags().BoolVarP(&keepTests, "keeptests", "k", false, "keep _test.go files")
+	BuildCmd.Flags().BoolVarP(&winHide, "winhide", "w", false, "hide windows GUI")
+	BuildCmd.Flags().BoolVarP(&noStaticLink, "nostatic", "s", false, "do not statically link")
+	BuildCmd.Flags().BoolVarP(&preservePackageName, "noencrypt", "e", false,
 		"no encrypted package name for go build command (works when main package has CGO code)")
-	flag.BoolVar(&verbose, "verbose", false, "verbose mode")
-	flag.StringVar(&tags, "tags", "", "tags are passed to the go compiler")
-
-	flag.Parse()
-
-	if len(flag.Args()) != 2 {
-		fmt.Fprintln(os.Stderr, "Usage: gobfuscate [flags] pkg_name out_path")
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
-
-	pkgName := flag.Args()[0]
-	outPath := flag.Args()[1]
-
-	if !obfuscate(pkgName, outPath) {
-		os.Exit(1)
-	}
+	BuildCmd.Flags().BoolVarP(&verbose, "verbose", "v", true, "verbose mode")
+	BuildCmd.Flags().BoolVarP(&ignoreDelTmp, "cleanup", "c", false, "no cleanup when exit")
+	BuildCmd.Flags().StringVarP(&tags, "tags", "t", "", "tags are passed to the go compiler")
+	BuildCmd.Flags().StringVar(&ldf, "ldf", "", "more ldflag when build")
+	BuildCmd.Flags().StringVar(&go11module, "go11module", "auto", "env go11module")
 }
 
 func obfuscate(pkgName, outPath string) bool {
@@ -61,22 +85,31 @@ func obfuscate(pkgName, outPath string) bool {
 		}
 	} else {
 		var err error
-		newGopath, err = ioutil.TempDir("", "")
+		newGopath, err = os.MkdirTemp("", "")
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to create temp dir:", err)
 			return false
 		}
-		defer os.RemoveAll(newGopath)
+		if !ignoreDelTmp {
+			gosystem.InitSignal(func(s os.Signal) int {
+				os.RemoveAll(newGopath)
+				return 0
+			})
+		}
 	}
+	log.Printf("Origin GOPATH: %s\nGO111MODULE: %s", os.Getenv("GOPATH"), os.Getenv("GO111MODULE"))
 
-	log.Println("Copying GOPATH...")
+	log.Printf("Copying to new GOPATH %s...\n", newGopath)
 
-	if err := CopyGopath(pkgName, newGopath, keepTests); err != nil {
+	if err := gobfuscate.CopyGopath(pkgName, newGopath, keepTests); err != nil {
 		moreInfo := "\nNote: Setting GO111MODULE env variable to `off` may resolve the above error."
+		if os.Getenv("GO111MODULE") == "off" {
+			moreInfo = ""
+		}
 		fmt.Fprintln(os.Stderr, "Failed to copy into a new GOPATH:", err, moreInfo)
 		return false
 	}
-	var n NameHasher
+	var n gobfuscate.NameHasher
 	if customPadding == "" {
 		buf := make([]byte, 32)
 		rand.Read(buf)
@@ -86,17 +119,17 @@ func obfuscate(pkgName, outPath string) bool {
 	}
 
 	log.Println("Obfuscating package names...")
-	if err := ObfuscatePackageNames(newGopath, n); err != nil {
+	if err := gobfuscate.ObfuscatePackageNames(newGopath, n); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to obfuscate package names:", err)
 		return false
 	}
 	log.Println("Obfuscating strings...")
-	if err := ObfuscateStrings(newGopath); err != nil {
+	if err := gobfuscate.ObfuscateStrings(newGopath); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to obfuscate strings:", err)
 		return false
 	}
 	log.Println("Obfuscating symbols...")
-	if err := ObfuscateSymbols(newGopath, n); err != nil {
+	if err := gobfuscate.ObfuscateSymbols(newGopath, n); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to obfuscate symbols:", err)
 		return false
 	}
@@ -118,6 +151,9 @@ func obfuscate(pkgName, outPath string) bool {
 	}
 	if !noStaticLink {
 		ldflags += ` -extldflags '-static'`
+	}
+	if len(ldf) != 0 {
+		ldflags += " " + ldf
 	}
 
 	goCache := newGopath + "/cache"
@@ -158,7 +194,7 @@ func obfuscate(pkgName, outPath string) bool {
 	return true
 }
 
-func encryptComponents(pkgName string, n NameHasher) string {
+func encryptComponents(pkgName string, n gobfuscate.NameHasher) string {
 	comps := strings.Split(pkgName, "/")
 	for i, comp := range comps {
 		comps[i] = n.Hash(comp)

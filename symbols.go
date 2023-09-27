@@ -1,4 +1,4 @@
-package main
+package gobfuscate
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"go/build"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -229,7 +229,7 @@ func containsUnsupportedCode(dir string) bool {
 // We cannot rename symbols in assembly-filled directories
 // because of limitations of the refactoring API.
 func containsAssembly(dir string) bool {
-	contents, _ := ioutil.ReadDir(dir)
+	contents, _ := os.ReadDir(dir)
 	for _, item := range contents {
 		if filepath.Ext(item.Name()) == ".s" {
 			return true
@@ -242,7 +242,7 @@ func containsAssembly(dir string) bool {
 // We cannot rename symbols in packages that use CGO due
 // to limitations of the refactoring API.
 func containsCGO(dir string) bool {
-	listing, err := ioutil.ReadDir(dir)
+	listing, err := os.ReadDir(dir)
 	if err != nil {
 		return false
 	}
@@ -282,7 +282,7 @@ func removeDoNotEdit(dir string) error {
 		}
 		defer f.Close()
 
-		content, err := ioutil.ReadAll(f)
+		content, err := io.ReadAll(f)
 		if err != nil {
 			return err
 		}

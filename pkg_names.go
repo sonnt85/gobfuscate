@@ -1,4 +1,4 @@
-package main
+package gobfuscate
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 	"go/build"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -73,7 +73,7 @@ func scanLevel(dir string, depth int, res chan<- string, done <-chan struct{}) {
 		}
 		return
 	}
-	listing, _ := ioutil.ReadDir(dir)
+	listing, _ := os.ReadDir(dir)
 	for _, item := range listing {
 		if item.IsDir() {
 			scanLevel(filepath.Join(dir, item.Name()), depth-1, res, done)
@@ -92,7 +92,7 @@ func encryptPackageName(dir string, p NameHasher) string {
 }
 
 func isMainPackage(dir string) bool {
-	listing, err := ioutil.ReadDir(dir)
+	listing, err := os.ReadDir(dir)
 	if err != nil {
 		return false
 	}
@@ -100,7 +100,7 @@ func isMainPackage(dir string) bool {
 		if isGoFile(item.Name()) {
 			path := filepath.Join(dir, item.Name())
 			set := token.NewFileSet()
-			contents, err := ioutil.ReadFile(path)
+			contents, err := os.ReadFile(path)
 			if err != nil {
 				return false
 			}
@@ -119,7 +119,7 @@ func isMainPackage(dir string) bool {
 }
 
 func makeMainPackage(dir string) error {
-	listing, err := ioutil.ReadDir(dir)
+	listing, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func makeMainPackage(dir string) error {
 			continue
 		}
 		path := filepath.Join(dir, item.Name())
-		contents, err := ioutil.ReadFile(path)
+		contents, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
@@ -152,8 +152,7 @@ func makeMainPackage(dir string) error {
 		var newData bytes.Buffer
 		newData.Write(prePkg)
 		newData.WriteString(strings.Replace(postPkg, packageName, "main", 1))
-
-		if err := ioutil.WriteFile(path, newData.Bytes(), item.Mode()); err != nil {
+		if err := os.WriteFile(path, newData.Bytes(), item.Type().Perm()); err != nil {
 			return err
 		}
 	}
